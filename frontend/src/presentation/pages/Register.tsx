@@ -1,29 +1,28 @@
 import {
   Button,
   Divider,
-  Link,
   TextField,
   Typography,
 } from '@mui/material'
 
-interface LoginProps {
-  onLogin: () => void
-  onRegister: () => void
-}
+import { Link } from 'react-router-dom'
+import logo from '../../assets/LOGO.jpeg'
 
-function Login({ onLogin, onRegister }: LoginProps) {
+function Register() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4 py-8">
       <div className="w-full max-w-md">
+
         <div className="bg-white rounded-2xl shadow-lg p-8">
 
           {/* Logo */}
-          <div className="flex justify-center mb-6">
-            <div className="w-20 h-20 rounded-2xl bg-gray-200 flex items-center justify-center">
-              <span className="text-gray-400 text-sm">
-                LOGO
-              </span>
-            </div>
+          <div className="w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center mx-auto mb-4">
+            <img
+            
+              src={logo}
+              alt="Plataforma de Leilões"
+              className="w-full h-full object-cover"
+            />
           </div>
 
           {/* Título */}
@@ -32,21 +31,35 @@ function Login({ onLogin, onRegister }: LoginProps) {
               variant="h4"
               component="h1"
               sx={{
-                  fontWeight: 700
-                }}
+                color: '#1a3a6b',
+                fontWeight: 700,
+              }}
               gutterBottom
             >
-              Bem-vindo
+              Criar conta
             </Typography>
 
-            <Typography variant="body2" color="text.secondary">
-              Entre na sua conta para acessar a plataforma de leilões.
+            <Typography
+              variant="body2"
+              color="text.secondary"
+            >
+              Crie sua conta para participar dos leilões.
             </Typography>
           </div>
 
           {/* Formulário */}
           <div className="flex flex-col gap-4">
 
+            {/* Nome de usuário */}
+            <TextField
+              label="Nome de usuário"
+              placeholder="Ex.: joaosilva"
+              fullWidth
+              helperText="Esse nome aparecerá nos seus lances."
+              autoComplete="username"
+            />
+
+            {/* E-mail */}
             <TextField
               label="E-mail"
               type="email"
@@ -54,39 +67,39 @@ function Login({ onLogin, onRegister }: LoginProps) {
               autoComplete="email"
             />
 
-            <div>
-              <TextField
-                label="Senha"
-                type="password"
-                fullWidth
-                autoComplete="current-password"
-              />
+            {/* Senha */}
+            <TextField
+              label="Senha"
+              type="password"
+              fullWidth
+              autoComplete="new-password"
+            />
 
-              <div className="flex justify-end mt-2">
-                <Link
-                  href="#"
-                  underline="hover"
-                  variant="body2"
-                >
-                  Esqueceu sua senha?
-                </Link>
-              </div>
-            </div>
+            {/* Confirmar senha */}
+            <TextField
+              label="Confirmar senha"
+              type="password"
+              fullWidth
+              autoComplete="new-password"
+            />
 
-            {/* Login */}
+            {/* Criar conta */}
             <Button
               variant="contained"
               size="large"
               fullWidth
-              onClick={onLogin}
+              onClick={() => {
+                console.log('Cadastro enviado')
+              }}
               sx={{
                 py: 1.5,
+                mt: 1,
                 textTransform: 'none',
                 fontSize: '1rem',
                 fontWeight: 600,
               }}
             >
-              Entrar
+              Criar conta
             </Button>
 
             {/* Separador */}
@@ -108,14 +121,14 @@ function Login({ onLogin, onRegister }: LoginProps) {
               variant="outlined"
               size="large"
               fullWidth
+              onClick={() => {
+                console.log('Cadastro com Google')
+              }}
               sx={{
                 py: 1.5,
                 textTransform: 'none',
                 fontSize: '1rem',
                 fontWeight: 500,
-              }}
-              onClick={() => {
-                console.log('Login com Google')
               }}
             >
               <span className="mr-3 font-bold text-lg">
@@ -127,24 +140,19 @@ function Login({ onLogin, onRegister }: LoginProps) {
 
           </div>
 
-          {/* Registro */}
+          {/* Voltar para login */}
           <div className="text-center mt-8">
             <Typography
               variant="body2"
               color="text.secondary"
             >
-              Ainda não possui uma conta?{' '}
+              Já possui uma conta?{' '}
 
               <Link
-                component={Button}
-                underline="hover"
-                onClick={onRegister}
-                sx={{
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    }}
+                to="/login"
+                className="font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
               >
-                Criar conta
+                Entrar
               </Link>
             </Typography>
           </div>
@@ -159,9 +167,10 @@ function Login({ onLogin, onRegister }: LoginProps) {
         >
           © 2026 Plataforma de Leilões
         </Typography>
+
       </div>
     </div>
   )
 }
 
-export default Login
+export default Register
