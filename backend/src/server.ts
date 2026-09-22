@@ -1,23 +1,24 @@
 import express from "express";
 import cors from "cors";
+import "dotenv/config";
+import authRoutes from "./interfaces/routes/AuthRoutes.js";
 
 const app = express();
 
 app.use(cors());
+app.use(express.json());
 
-const PORT = 3000;
+app.use("/api/auth", authRoutes);
 
-app.get("/", (req,res) => {
+app.get("/", (req, res) => {
     res.json({
         title: 'Plataforma de Leilões',
         message: 'Servidor funfannnnte!'
-    }
-
-    );
+    });
 });
 
-app.listen(PORT,() =>{
-    console.log(`Servidor rodante em http://localhost:${PORT}`);
-});
+const PORT = process.env.PORT ?? 3000;
 
-console.log(typeof app)
+app.listen(PORT, () => {
+    console.log(`Servidor rodando em http://localhost:${PORT}`);
+});
