@@ -9,6 +9,17 @@ export class ApiError extends Error {
   }
 }
 
+export async function apiGet<TResponse>(path: string): Promise<TResponse> {
+  const response = await fetch(`${API_URL}${path}`)
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new ApiError(data.message ?? 'Erro na requisição', response.status)
+  }
+
+  return data as TResponse
+}
+
 export async function apiPost<TResponse>(path: string, body: unknown): Promise<TResponse> {
   const response = await fetch(`${API_URL}${path}`, {
     method: 'POST',

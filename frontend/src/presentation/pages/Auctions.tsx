@@ -10,13 +10,20 @@ import {
   Select,
   MenuItem,
   InputAdornment,
+  CircularProgress,
+  Alert,
 } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
 import logo from '../../assets/LOGO.jpeg'
 import AuctionCard from '../components/AuctionCard'
-import { initialAuctions } from '../mocks/mocksAuctions'
+import { GetAuctions } from '../../application/use-cases/auction/GetAuctions'
+import { HttpAuctionRepository } from '../../infrastructure/repositories/HttpAuctionRepository'
+import { ApiError } from '../../infrastructure/http/api'
 import { AUCTION_CATEGORIES } from '../../domain/entities/Auction'
 import type { Auction, AuctionCategory } from '../../domain/entities/Auction'
+
+const auctionRepository = new HttpAuctionRepository()
+const getAuctions = new GetAuctions(auctionRepository)
 
 interface NewAuctionForm {
   title: string
@@ -37,7 +44,10 @@ const emptyForm: NewAuctionForm = {
 type CategoryFilter = AuctionCategory | 'Todas'
 
 function Auctions() {
-  const [auctions, setAuctions] = useState<Auction[]>(initialAuctions)
+  const [auctions, setAuctions] = useState<Auction[]>([])
+  const [isLoadingAuctions, setIsLoadingAuctions] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [form, setForm] = useState<NewAuctionForm>(emptyForm)
 
@@ -46,8 +56,22 @@ function Auctions() {
 
   const [auctionToDelete, setAuctionToDelete] = useState<Auction | null>(null)
 
-  // Força reavaliação periódica de isAuctionClosed() sem precisar recarregar a página,
-  // para que um leilão vire "encerrado" sozinho quando o prazo passa com a tela aberta.
+  useEffect(() => {
+    async function loadAuctions() {
+      try {
+        const result = await getAuctions.execute()
+        setAuctions(result)
+      } catch (err) {
+        const message = err instanceof ApiError ? err.message : 'Erro ao carregar leilões'
+        setLoadError(message)
+      } finally {
+        setIsLoadingAuctions(false)
+      }
+    }
+
+    loadAuctions()
+  }, [])
+
   const [, forceRerender] = useState(0)
   useEffect(() => {
     const interval = setInterval(() => forceRerender((n) => n + 1), 15000)
@@ -80,6 +104,7 @@ function Auctions() {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
+  // Ainda local/mockado — CreateAuction real vem no próximo passo.
   function handleCreateAuction() {
     if (!form.title || !form.startingPrice || !form.endsAt) {
       return
@@ -109,6 +134,7 @@ function Auctions() {
     setAuctionToDelete(null)
   }
 
+  // Ainda local/mockado — DeleteAuction real vem no próximo passo.
   function handleConfirmDelete() {
     if (!auctionToDelete) return
     setAuctions((prev) => prev.filter((a) => a.id !== auctionToDelete.id))
@@ -117,7 +143,6 @@ function Auctions() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Header */}
       <header className="bg-white shadow-sm px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <img src={logo} alt="Plataforma de Leilões" className="w-10 h-10 rounded-lg object-cover" />
@@ -135,7 +160,6 @@ function Auctions() {
         </Button>
       </header>
 
-      {/* Conteúdo */}
       <main className="px-6 py-8 max-w-6xl mx-auto">
         <Typography variant="h5" sx={{ fontWeight: 700, mb: 4, color: '#1a3a6b' }}>
           Leilões disponíveis
@@ -172,7 +196,13 @@ function Auctions() {
           </Select>
         </div>
 
-        {filteredAuctions.length === 0 ? (
+        {isLoadingAuctions ? (
+          <div className="flex justify-center py-12">
+            <CircularProgress />
+          </div>
+        ) : loadError ? (
+          <Alert severity="error">{loadError}</Alert>
+        ) : filteredAuctions.length === 0 ? (
           <Typography color="text.secondary">
             Nenhum leilão encontrado com esses filtros.
           </Typography>
@@ -189,7 +219,6 @@ function Auctions() {
         )}
       </main>
 
-      {/* Modal de criação */}
       <Dialog open={isDialogOpen} onClose={handleCloseDialog} fullWidth maxWidth="sm">
         <DialogTitle sx={{ fontWeight: 700, color: '#1a3a6b' }}>
           Criar novo leilão
@@ -265,7 +294,6 @@ function Auctions() {
         </DialogActions>
       </Dialog>
 
-      {/* Modal de confirmação de exclusão */}
       <Dialog open={!!auctionToDelete} onClose={handleCancelDelete} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontWeight: 700, color: '#b91c1c' }}>
           Excluir leilão
