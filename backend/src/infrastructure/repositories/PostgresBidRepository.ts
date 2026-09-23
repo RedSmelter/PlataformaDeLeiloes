@@ -1,6 +1,6 @@
 import { pool } from '../database/postgres.js'
-import type { BidRepository, CreateBidInput } from '../../domain/repositories/BidRepository.ts'
-import type { Bid } from '../../domain/entities/Bid.ts'
+import type { BidRepository, CreateBidInput } from '../../domain/repositories/BidRepository.js'
+import type { Bid } from '../../domain/entities/Bid.js'
 import { AuctionNotFoundError, AuctionClosedError, BidTooLowError } from '../../domain/errors/AuctionErrors.js'
 
 function mapRow(row: any): Bid {
@@ -8,6 +8,7 @@ function mapRow(row: any): Bid {
     id: row.id,
     auctionId: row.auction_id,
     userId: row.user_id,
+    username: row.username,
     amount: Number(row.amount),
     createdAt: row.created_at,
   }
@@ -16,7 +17,11 @@ function mapRow(row: any): Bid {
 export class PostgresBidRepository implements BidRepository {
   async findByAuctionId(auctionId: string): Promise<Bid[]> {
     const result = await pool.query(
-      'SELECT * FROM bids WHERE auction_id = $1 ORDER BY created_at DESC',
+      `SELECT bids.*, users.username
+       FROM bids
+       JOIN users ON users.id = bids.user_id
+       WHERE bids.auction_id = $1
+       ORDER BY bids.created_at DESC`,
       [auctionId]
     )
     return result.rows.map(mapRow)
@@ -56,6 +61,10 @@ export class PostgresBidRepository implements BidRepository {
         [input.auctionId, input.userId, input.amount]
       )
 
+      const userResult = await client.query('SELECT username FROM users WHERE id = $1', [
+        input.userId,
+      ])
+
       await client.query('UPDATE auctions SET current_price = $1 WHERE id = $2', [
         input.amount,
         input.auctionId,
@@ -63,7 +72,7 @@ export class PostgresBidRepository implements BidRepository {
 
       await client.query('COMMIT')
 
-      return mapRow(bidResult.rows[0])
+      return mapRow({ ...bidResult.rows[0], username: userResult.rows[0].username })
     } catch (error) {
       await client.query('ROLLBACK')
       throw error

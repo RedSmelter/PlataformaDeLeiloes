@@ -16,12 +16,19 @@ function mapRow(row: any): Auction {
     status: row.status,
     winnerId: row.winner_id,
     createdAt: row.created_at,
+    bidsCount: row.bids_count !== undefined ? Number(row.bids_count) : 0,
   }
 }
 
 export class PostgresAuctionRepository implements AuctionRepository {
   async findAll(): Promise<Auction[]> {
-    const result = await pool.query('SELECT * FROM auctions ORDER BY created_at DESC')
+    const result = await pool.query(
+      `SELECT auctions.*, COUNT(bids.id)::int AS bids_count
+       FROM auctions
+       LEFT JOIN bids ON bids.auction_id = auctions.id
+       GROUP BY auctions.id
+       ORDER BY auctions.created_at DESC`
+    )
     return result.rows.map(mapRow)
   }
 

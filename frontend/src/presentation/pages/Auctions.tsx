@@ -17,6 +17,8 @@ import SearchIcon from '@mui/icons-material/Search'
 import logo from '../../assets/LOGO.jpeg'
 import AuctionCard from '../components/AuctionCard'
 import { GetAuctions } from '../../application/use-cases/auction/GetAuctions'
+import { CreateAuction } from '../../application/use-cases/auction/CreateAuction'
+import { DeleteAuction } from '../../application/use-cases/auction/DeleteAuction'
 import { HttpAuctionRepository } from '../../infrastructure/repositories/HttpAuctionRepository'
 import { ApiError } from '../../infrastructure/http/api'
 import { AUCTION_CATEGORIES } from '../../domain/entities/Auction'
@@ -24,6 +26,8 @@ import type { Auction, AuctionCategory } from '../../domain/entities/Auction'
 
 const auctionRepository = new HttpAuctionRepository()
 const getAuctions = new GetAuctions(auctionRepository)
+const createAuction = new CreateAuction(auctionRepository)
+const deleteAuction = new DeleteAuction(auctionRepository)
 
 interface NewAuctionForm {
   title: string
@@ -50,11 +54,15 @@ function Auctions() {
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [form, setForm] = useState<NewAuctionForm>(emptyForm)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('Todas')
 
   const [auctionToDelete, setAuctionToDelete] = useState<Auction | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   useEffect(() => {
     async function loadAuctions() {
@@ -93,6 +101,7 @@ function Auctions() {
 
   function handleOpenDialog() {
     setForm(emptyForm)
+    setFormError(null)
     setIsDialogOpen(true)
   }
 
@@ -104,29 +113,35 @@ function Auctions() {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  // Ainda local/mockado — CreateAuction real vem no próximo passo.
-  function handleCreateAuction() {
+  async function handleCreateAuction() {
     if (!form.title || !form.startingPrice || !form.endsAt) {
       return
     }
 
-    const newAuction: Auction = {
-      id: crypto.randomUUID(),
-      title: form.title,
-      description: form.description,
-      imageUrl: 'https://placehold.co/600x400?text=Leilao',
-      category: form.category,
-      currentBid: Number(form.startingPrice),
-      bidsCount: 0,
-      endsAt: new Date(form.endsAt),
-      status: 'open',
-    }
+    setFormError(null)
+    setIsSubmitting(true)
 
-    setAuctions((prev) => [newAuction, ...prev])
-    setIsDialogOpen(false)
+    try {
+      const newAuction = await createAuction.execute({
+        title: form.title,
+        description: form.description,
+        category: form.category,
+        startingPrice: Number(form.startingPrice),
+        endsAt: new Date(form.endsAt),
+      })
+
+      setAuctions((prev) => [newAuction, ...prev])
+      setIsDialogOpen(false)
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Erro ao criar leilão'
+      setFormError(message)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   function handleRequestDelete(auction: Auction) {
+    setDeleteError(null)
     setAuctionToDelete(auction)
   }
 
@@ -134,11 +149,22 @@ function Auctions() {
     setAuctionToDelete(null)
   }
 
-  // Ainda local/mockado — DeleteAuction real vem no próximo passo.
-  function handleConfirmDelete() {
+  async function handleConfirmDelete() {
     if (!auctionToDelete) return
-    setAuctions((prev) => prev.filter((a) => a.id !== auctionToDelete.id))
-    setAuctionToDelete(null)
+
+    setDeleteError(null)
+    setIsDeleting(true)
+
+    try {
+      await deleteAuction.execute(auctionToDelete.id)
+      setAuctions((prev) => prev.filter((a) => a.id !== auctionToDelete.id))
+      setAuctionToDelete(null)
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Erro ao excluir leilão'
+      setDeleteError(message)
+    } finally {
+      setIsDeleting(false)
+    }
   }
 
   return (
@@ -225,6 +251,8 @@ function Auctions() {
         </DialogTitle>
 
         <DialogContent className="flex flex-col gap-4 pt-2">
+          {formError && <Alert severity="error">{formError}</Alert>}
+
           <TextField
             label="Título"
             fullWidth
@@ -281,15 +309,16 @@ function Auctions() {
         </DialogContent>
 
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={handleCloseDialog} sx={{ textTransform: 'none' }}>
+          <Button onClick={handleCloseDialog} sx={{ textTransform: 'none' }} disabled={isSubmitting}>
             Cancelar
           </Button>
           <Button
             variant="contained"
             sx={{ textTransform: 'none' }}
             onClick={handleCreateAuction}
+            disabled={isSubmitting}
           >
-            Criar leilão
+            {isSubmitting ? 'Criando...' : 'Criar leilão'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -299,14 +328,16 @@ function Auctions() {
           Excluir leilão
         </DialogTitle>
 
-        <DialogContent>
+        <DialogContent className="flex flex-col gap-3">
+          {deleteError && <Alert severity="error">{deleteError}</Alert>}
+
           <Typography>
             Tem certeza que deseja excluir o leilão "{auctionToDelete?.title}"? Essa ação não pode ser desfeita.
           </Typography>
         </DialogContent>
 
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={handleCancelDelete} sx={{ textTransform: 'none' }}>
+          <Button onClick={handleCancelDelete} sx={{ textTransform: 'none' }} disabled={isDeleting}>
             Cancelar
           </Button>
           <Button
@@ -314,8 +345,9 @@ function Auctions() {
             color="error"
             sx={{ textTransform: 'none' }}
             onClick={handleConfirmDelete}
+            disabled={isDeleting}
           >
-            Excluir
+            {isDeleting ? 'Excluindo...' : 'Excluir'}
           </Button>
         </DialogActions>
       </Dialog>

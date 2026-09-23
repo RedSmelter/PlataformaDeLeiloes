@@ -22,4 +22,5 @@ export interface Auction {
   status: AuctionStatus
   winnerId: string | null
   createdAt: Date
+  bidsCount: number
 }

@@ -10,12 +10,26 @@ import {
   DialogActions,
   TextField,
   Divider,
+  CircularProgress,
+  Alert,
 } from '@mui/material'
-import { initialAuctions, initialBids } from '../mocks/mocksAuctions'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import BidList from '../components/BidList'
 import { isAuctionClosed } from '../../domain/entities/Auction'
+import { GetAuctionById } from '../../application/use-cases/auction/GetAuctionById'
+import { GetBids } from '../../application/use-cases/bid/GetBids'
+import { PlaceBid } from '../../application/use-cases/bid/PlaceBid'
+import { HttpAuctionRepository } from '../../infrastructure/repositories/HttpAuctionRepository'
+import { HttpBidRepository } from '../../infrastructure/repositories/HttpBidRepository'
+import { ApiError } from '../../infrastructure/http/api'
+import type { Auction } from '../../domain/entities/Auction'
 import type { Bid } from '../../domain/entities/Bid'
-import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+
+const auctionRepository = new HttpAuctionRepository()
+const bidRepository = new HttpBidRepository()
+const getAuctionById = new GetAuctionById(auctionRepository)
+const getBids = new GetBids(bidRepository)
+const placeBid = new PlaceBid(bidRepository)
 
 function formatCurrency(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -34,22 +48,63 @@ function AuctionDetails() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const auction = initialAuctions.find((item) => item.id === id)
+  const [auction, setAuction] = useState<Auction | null>(null)
+  const [bids, setBids] = useState<Bid[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  const [bids, setBids] = useState<Bid[]>(
-    initialBids.filter((bid) => bid.auctionId === id)
-  )
-  const [currentBid, setCurrentBid] = useState(auction?.currentBid ?? 0)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [bidAmount, setBidAmount] = useState('')
+  const [bidError, setBidError] = useState<string | null>(null)
+  const [isBidding, setIsBidding] = useState(false)
 
-  // Reavaliação periódica, igual em Auctions.tsx, para o leilão fechar
-  // sozinho na tela caso o prazo vença com a página aberta.
+  useEffect(() => {
+    async function loadData() {
+      if (!id) return
+
+      try {
+        const [auctionResult, bidsResult] = await Promise.all([
+          getAuctionById.execute(id),
+          getBids.execute(id),
+        ])
+
+        setAuction(auctionResult)
+        setBids(bidsResult)
+      } catch (err) {
+        const message = err instanceof ApiError ? err.message : 'Erro ao carregar leilão'
+        setLoadError(message)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadData()
+  }, [id])
+
   const [, forceRerender] = useState(0)
   useEffect(() => {
     const interval = setInterval(() => forceRerender((n) => n + 1), 15000)
     return () => clearInterval(interval)
   }, [])
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <CircularProgress />
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4">
+        <Alert severity="error">{loadError}</Alert>
+        <Button variant="contained" onClick={() => navigate('/auctions')}>
+          Voltar para leilões
+        </Button>
+      </div>
+    )
+  }
 
   if (!auction) {
     return (
@@ -66,28 +121,32 @@ function AuctionDetails() {
   const latestBid = [...bids].sort(
     (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
   )[0]
-  const winnerName = latestBid?.userName ?? auction.winnerName
+  const winnerName = latestBid?.userName
 
   function handleOpenDialog() {
     setBidAmount('')
+    setBidError(null)
     setIsDialogOpen(true)
   }
 
-  function handlePlaceBid() {
+  async function handlePlaceBid() {
     const amount = Number(bidAmount)
-    if (!amount || amount <= currentBid) return
+    if (!amount || !auction) return
 
-    const newBid: Bid = {
-      id: crypto.randomUUID(),
-      auctionId: id!,
-      userName: 'Você',
-      amount,
-      createdAt: new Date(),
+    setBidError(null)
+    setIsBidding(true)
+
+    try {
+      const newBid = await placeBid.execute({ auctionId: auction.id, amount })
+      setBids((prev) => [newBid, ...prev])
+      setAuction((prev) => (prev ? { ...prev, currentBid: newBid.amount } : prev))
+      setIsDialogOpen(false)
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Erro ao registrar lance'
+      setBidError(message)
+    } finally {
+      setIsBidding(false)
     }
-
-    setBids((prev) => [newBid, ...prev])
-    setCurrentBid(amount)
-    setIsDialogOpen(false)
   }
 
   return (
@@ -145,7 +204,7 @@ function AuctionDetails() {
                   {closed ? 'Lance vencedor' : 'Lance atual'}
                 </Typography>
                 <Typography variant="h5" sx={{ fontWeight: 700 }}>
-                  {formatCurrency(currentBid)}
+                  {formatCurrency(auction.currentBid)}
                 </Typography>
 
                 {closed ? (
@@ -189,8 +248,10 @@ function AuctionDetails() {
         </DialogTitle>
 
         <DialogContent className="flex flex-col gap-2 pt-2">
+          {bidError && <Alert severity="error">{bidError}</Alert>}
+
           <Typography variant="body2" color="text.secondary">
-            Lance atual: {formatCurrency(currentBid)}
+            Lance atual: {formatCurrency(auction.currentBid)}
           </Typography>
 
           <TextField
@@ -204,15 +265,16 @@ function AuctionDetails() {
         </DialogContent>
 
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setIsDialogOpen(false)} sx={{ textTransform: 'none' }}>
+          <Button onClick={() => setIsDialogOpen(false)} sx={{ textTransform: 'none' }} disabled={isBidding}>
             Cancelar
           </Button>
           <Button
             variant="contained"
             sx={{ textTransform: 'none' }}
             onClick={handlePlaceBid}
+            disabled={isBidding}
           >
-            Confirmar lance
+            {isBidding ? 'Enviando...' : 'Confirmar lance'}
           </Button>
         </DialogActions>
       </Dialog>
