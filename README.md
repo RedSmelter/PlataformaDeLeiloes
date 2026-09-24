@@ -1,654 +1,725 @@
-# PlataformaDeLeiloes# Plataforma de Leilões em Tempo Real
+# Plataforma de Leilões em Tempo Real
 
-Sistema distribuído de leilões em tempo real desenvolvido como projeto acadêmico de Engenharia da Computação.
+Sistema de leilões desenvolvido para demonstrar uma arquitetura distribuída capaz de receber múltiplos lances simultaneamente, atualizar os participantes em tempo real e executar o processamento pós-leilão de forma desacoplada.
 
-A aplicação permite que múltiplos usuários participem simultaneamente de leilões, realizando lances que são propagados em tempo real para os participantes. O sistema também possui processamento assíncrono para operações realizadas após o encerramento dos leilões, como registro do vencedor, cobrança e envio de confirmação.
+## Tecnologias
 
-O projeto foi desenvolvido com foco em **Clean Architecture, comunicação em tempo real, mensageria, escalabilidade horizontal e conteinerização**.
-
----
-
-## 📋 Sumário
-
-* [Sobre o projeto](#sobre-o-projeto)
-* [Objetivos](#objetivos)
-* [Principais funcionalidades](#principais-funcionalidades)
-* [Arquitetura](#arquitetura)
-* [Tecnologias](#tecnologias)
-* [Comunicação entre componentes](#comunicação-entre-componentes)
-* [Clean Architecture](#clean-architecture)
-* [Fluxo de um lance](#fluxo-de-um-lance)
-* [Encerramento do leilão](#encerramento-do-leilão)
-* [Escalabilidade](#escalabilidade)
-* [Estrutura do projeto](#estrutura-do-projeto)
-* [Execução com Docker](#execução-com-docker)
-* [Execução em desenvolvimento](#execução-em-desenvolvimento)
-* [Variáveis de ambiente](#variáveis-de-ambiente)
-* [Testes de carga](#testes-de-carga)
-* [Decisões arquiteturais](#decisões-arquiteturais)
-* [Requisitos acadêmicos atendidos](#requisitos-acadêmicos-atendidos)
-* [Próximos passos](#próximos-passos)
-
----
-
-# Sobre o projeto
-
-A **Plataforma de Leilões em Tempo Real** foi desenvolvida para solucionar um cenário no qual diversos usuários precisam acompanhar e participar de um mesmo leilão simultaneamente.
-
-Em um sistema tradicional baseado apenas em requisições HTTP periódicas, cada cliente precisaria consultar repetidamente o servidor para descobrir se houve um novo lance.
-
-Isso gera:
-
-* tráfego HTTP desnecessário;
-* aumento da carga no backend;
-* maior latência;
-* dificuldade para manter todos os usuários sincronizados;
-* problemas de escalabilidade quando o número de participantes aumenta.
-
-A solução utiliza comunicação persistente e eventos para que as alterações sejam distribuídas aos usuários praticamente no momento em que acontecem.
-
----
-
-# Objetivos
-
-O projeto possui os seguintes objetivos principais:
-
-1. Permitir criação e gerenciamento de leilões.
-2. Permitir cadastro e autenticação de usuários.
-3. Permitir realização de lances.
-4. Atualizar os participantes em tempo real.
-5. Suportar múltiplos usuários participando do mesmo leilão.
-6. Evitar polling constante do frontend.
-7. Utilizar processamento assíncrono para operações não críticas ao fluxo imediato do lance.
-8. Permitir execução de múltiplas instâncias do backend.
-9. Distribuir requisições entre as instâncias.
-10. Permitir escalabilidade horizontal.
-11. Isolar regras de negócio utilizando Clean Architecture.
-12. Executar os componentes através de containers Docker.
-
----
-
-# Principais funcionalidades
-
-## Autenticação
-
-O sistema possui fluxo de:
-
-* cadastro;
-* login;
-* autenticação;
-* identificação do usuário;
-* identificação do nome exibido durante os lances.
-
----
-
-## Leilões
-
-Cada leilão possui informações como:
-
-* produto;
-* descrição;
-* preço inicial;
-* maior lance atual;
-* usuário responsável pelo maior lance;
-* data/hora de início;
-* data/hora de encerramento;
-* estado do leilão.
-
-Estados possíveis:
-
-```text
-PENDING
-ACTIVE
-FINISHED
-```
-
----
-
-## Lances
-
-Durante um leilão ativo, usuários podem realizar lances.
-
-O sistema deve validar:
-
-* usuário autenticado;
-* leilão existente;
-* leilão ativo;
-* valor do lance;
-* lance superior ao maior lance atual;
-* regras relacionadas ao encerramento.
-
-Quando um lance válido é registrado, os participantes conectados recebem a atualização em tempo real.
-
----
-
-# Regra dos últimos 10 segundos
-
-Uma das regras importantes do cenário é o comportamento do leilão durante os últimos segundos.
-
-Quando um novo lance é realizado nos últimos 10 segundos, o sistema pode atualizar o temporizador do leilão de acordo com a regra definida pelo domínio.
-
-Essa lógica deve permanecer no **Domain/Application**, e não nos controllers ou componentes de infraestrutura.
-
-Isso permite que a regra continue funcionando independentemente de o sistema utilizar HTTP, WebSocket, testes automatizados ou outro mecanismo de entrada.
+* **Frontend:** React, TypeScript, Vite, Tailwind CSS, Material UI
+* **Backend:** Node.js, TypeScript, Express
+* **Banco de dados:** PostgreSQL
+* **Comunicação em tempo real:** WebSocket / Socket.IO
+* **Mensageria:** Redis Pub/Sub
+* **Comunicação entre serviços:** gRPC
+* **Load Balancer:** Traefik
+* **Containers:** Docker / Docker Compose
+* **Autoscaling:** Docker + serviço de autoscaling
 
 ---
 
 # Arquitetura
 
-A aplicação segue uma arquitetura distribuída composta por diferentes serviços:
+A aplicação é dividida em múltiplos serviços e containers.
 
 ```text
-                         ┌──────────────────┐
-                         │      Cliente     │
-                         │ React + Vite     │
-                         └────────┬─────────┘
-                                  │
-                         HTTP / WebSocket
+                                   ┌──────────────────────┐
+                                   │       USUÁRIOS       │
+                                   │   Navegador / React   │
+                                   └──────────┬───────────┘
+                                              │
+                                   HTTP / WebSocket
+                                              │
+                                              ▼
+                              ┌───────────────────────────┐
+                              │          TRAEFIK           │
+                              │       Load Balancer        │
+                              └─────────────┬─────────────┘
+                                            │
+                              distribui requisições HTTP
+                                  entre as réplicas
+                                            │
+                         ┌──────────────────┴──────────────────┐
+                         │                                     │
+                         ▼                                     ▼
+                ┌─────────────────┐                   ┌─────────────────┐
+                │    BACKEND 1    │                   │    BACKEND 2    │
+                │  Node + Express │                   │  Node + Express │
+                │                 │                   │                 │
+                │  API REST       │                   │  API REST       │
+                │  Socket.IO      │                   │  Socket.IO      │
+                └───────┬─────────┘                   └─────────┬───────┘
+                        │                                       │
+                        │                                       │
+              ┌─────────┴──────────┐                  ┌─────────┴──────────┐
+              │                    │                  │                    │
+              ▼                    ▼                  ▼                    ▼
+       ┌─────────────┐      ┌─────────────┐   ┌─────────────┐      ┌─────────────┐
+       │ PostgreSQL  │      │    Redis    │   │ PostgreSQL  │      │    Redis    │
+       │             │      │  Pub / Sub  │   │             │      │  Pub / Sub  │
+       └─────────────┘      └──────┬──────┘   └─────────────┘      └──────┬──────┘
+                                   │                                       │
+                                   └───────────────┬───────────────────────┘
+                                                   │
+                                      eventos de novos lances
+                                                   │
+                                                   ▼
+                                      ┌──────────────────────┐
+                                      │ WebSocket / Socket.IO │
+                                      │   Atualização em      │
+                                      │     tempo real        │
+                                      └──────────┬───────────┘
+                                                 │
+                                                 ▼
+                                            PARTICIPANTES
+
+
+                    QUANDO O LEILÃO É ENCERRADO
                                   │
                                   ▼
                          ┌──────────────────┐
-                         │      Nginx       │
-                         │  Load Balancer   │
+                         │     BACKEND      │
+                         │                  │
+                         │ identifica       │
+                         │ vencedor         │
                          └────────┬─────────┘
                                   │
-                    ┌─────────────┴─────────────┐
-                    │                           │
-                    ▼                           ▼
-           ┌─────────────────┐        ┌─────────────────┐
-           │   Backend #1    │        │   Backend #2    │
-           │ Node + Express  │        │ Node + Express  │
-           └────────┬────────┘        └────────┬────────┘
-                    │                          │
-                    └────────────┬─────────────┘
-                                 │
-                ┌────────────────┼─────────────────┐
-                │                │                 │
-                ▼                ▼                 ▼
-        ┌──────────────┐ ┌──────────────┐ ┌────────────────┐
-        │ PostgreSQL   │ │    Redis     │ │   RabbitMQ     │
-        │              │ │  Pub/Sub     │ │     AMQP       │
-        └──────────────┘ └──────────────┘ └────────────────┘
+                              gRPC │
+                                  ▼
+                    ┌────────────────────────────┐
+                    │    POST-AUCTION SERVICE    │
+                    │                            │
+                    │ Processamento pós-leilão   │
+                    │                            │
+                    │ cobrança / confirmação /   │
+                    │ demais tarefas posteriores │
+                    └────────────────────────────┘
+
+
+                    MONITORAMENTO / ESCALABILIDADE
+                                  │
+                                  ▼
+                         ┌──────────────────┐
+                         │    AUTOSCALER    │
+                         │                  │
+                         │ monitora recursos│
+                         │ dos containers   │
+                         └────────┬─────────┘
+                                  │
+                                  ▼
+                         Docker Engine
+                                  │
+                       ┌──────────┴──────────┐
+                       │                     │
+                       ▼                     ▼
+                  Backend 1             Backend 2
+                       │
+                       │ quando necessário
+                       ▼
+                  Backend 3
 ```
 
----
+### Fluxo de um lance
 
-# Tecnologias
-
-## Frontend
-
-* React
-* TypeScript
-* Vite
-* Tailwind CSS
-* Material UI
-* React Router
-
-Responsável pela interface do usuário e comunicação com o backend.
-
----
-
-## Backend
-
-* Node.js
-* TypeScript
-* Express
-
-Responsável pela API HTTP, regras de aplicação e integração com os componentes externos.
-
----
-
-## Banco de dados
-
-### PostgreSQL
-
-Responsável pela persistência dos dados principais da aplicação.
-
-Exemplos:
-
-* usuários;
-* leilões;
-* produtos;
-* lances;
-* vencedores;
-* transações.
-
----
-
-## Redis
-
-Utilizado principalmente para **Pub/Sub**.
-
-O Redis permite distribuir eventos entre diferentes instâncias do backend.
-
-Exemplo:
-
-```text
-Backend #1
-   │
-   │ novo lance
-   ▼
- Redis Pub/Sub
-   │
-   ├──────────────► Backend #2
-   │
-   └──────────────► Backend #3
-```
-
-Isso é importante porque um usuário conectado ao Backend #2 precisa receber um evento mesmo quando o lance foi processado inicialmente pelo Backend #1.
-
----
-
-## WebSocket
-
-O WebSocket mantém uma conexão persistente entre frontend e backend.
-
-É utilizado para:
-
-* atualização dos lances;
-* atualização do maior lance;
-* atualização do temporizador;
-* eventos de encerramento;
-* notificações relacionadas ao leilão.
-
-A principal vantagem é evitar que o frontend tenha que fazer polling constantemente.
-
----
-
-## RabbitMQ / AMQP
-
-RabbitMQ é utilizado para processamento assíncrono.
-
-Operações que não precisam bloquear o fluxo principal podem ser enviadas para uma fila.
-
-Exemplo:
-
-```text
-Leilão encerrado
-       │
-       ▼
- RabbitMQ
-       │
-       ├──► Serviço de pagamento
-       │
-       ├──► Serviço de e-mail
-       │
-       └──► Serviço de nota/invoice
-```
-
-Caso um serviço externo esteja temporariamente indisponível, a mensagem permanece na fila para processamento posterior.
-
----
-
-## Nginx
-
-O Nginx funciona como ponto de entrada da aplicação e load balancer.
-
-Exemplo:
-
-```text
-                    Nginx
-                      │
-             ┌────────┴────────┐
-             ▼                 ▼
-        Backend #1         Backend #2
-```
-
-Isso permite distribuir requisições entre diferentes instâncias do backend.
-
----
-
-## Docker
-
-Cada componente pode ser executado isoladamente em containers.
-
-Exemplo:
-
-```text
-frontend
-backend-1
-backend-2
-nginx
-postgres
-redis
-rabbitmq
-```
-
-O objetivo é tornar o ambiente reproduzível e facilitar a execução do sistema completo.
-
----
-
-# Comunicação entre componentes
-
-O projeto utiliza diferentes mecanismos de comunicação para resolver problemas diferentes.
-
-| Tecnologia      | Função                                 |
-| --------------- | -------------------------------------- |
-| HTTP            | Comunicação tradicional cliente/API    |
-| WebSocket       | Comunicação em tempo real              |
-| Redis Pub/Sub   | Distribuição de eventos entre backends |
-| RabbitMQ / AMQP | Processamento assíncrono               |
-| PostgreSQL      | Persistência                           |
-| Nginx           | Load balancing                         |
-
-As três tecnologias de comunicação distribuída escolhidas para atender ao cenário são:
-
-### WebSocket
-
-Responsável pela comunicação em tempo real com os clientes.
-
-### Redis Pub/Sub
-
-Responsável por sincronizar eventos entre múltiplas instâncias do backend.
-
-### AMQP / RabbitMQ
-
-Responsável pelo processamento assíncrono de tarefas.
-
----
-
-# Fluxo de um lance
-
-Um lance segue aproximadamente o seguinte fluxo:
+O fluxo simplificado de um lance é:
 
 ```text
 Usuário
    │
-   │ WebSocket
+   │ POST /api/auctions/:id/bids
    ▼
-Nginx
+Traefik
    │
-   ▼
-Backend #1
+   ├──────────────► Backend 1
    │
-   ├──► valida usuário
-   │
-   ├──► valida leilão
-   │
-   ├──► valida valor
-   │
-   ├──► executa regra de negócio
-   │
-   └──► persiste lance
-          │
-          ▼
-      PostgreSQL
-          │
-          ▼
-      Redis Pub/Sub
-          │
-       ┌──┴──┐
-       ▼     ▼
- Backend #1 Backend #2
-       │     │
-       └──┬──┘
-          ▼
-      WebSocket
-          │
-          ▼
-       Clientes
+   └──────────────► Backend 2
+                         │
+                         ▼
+                    PostgreSQL
+                         │
+                         ▼
+                    Redis Pub/Sub
+                         │
+              ┌──────────┴──────────┐
+              ▼                     ▼
+         Backend 1             Backend 2
+              │                     │
+              └──────────┬──────────┘
+                         ▼
+                    Socket.IO
+                         │
+                         ▼
+                Usuários conectados
 ```
 
-Dessa forma, todos os usuários conectados podem receber a atualização.
-
----
-
-# Encerramento do leilão
-
-Quando o temporizador chega ao fim:
-
-```text
-Timer termina
-     │
-     ▼
-Leilão encerrado
-     │
-     ├──► define vencedor
-     │
-     ├──► registra resultado
-     │
-     └──► publica evento
-              │
-              ▼
-          RabbitMQ
-              │
-       ┌──────┼───────┐
-       ▼      ▼       ▼
-   Pagamento E-mail  Invoice
-```
-
-O processamento posterior não precisa bloquear a finalização do leilão.
-
-Por exemplo, se o serviço de cartão estiver temporariamente indisponível:
-
-```text
-RabbitMQ
-   │
-   ▼
-Pagamento
-   │
-   X
- indisponível
-   │
-   ▼
-mensagem permanece na fila
-   │
-   ▼
-processamento posterior
-```
-
-Isso aumenta a tolerância a falhas dos serviços externos.
-
----
-
-# Clean Architecture
-
-O backend é organizado seguindo os princípios de Clean Architecture.
-
-Estrutura conceitual:
-
-```text
-Domain
-   │
-   ▼
-Application
-   │
-   ▼
-Infrastructure
-   │
-   ▼
-Presentation
-```
-
-A dependência deve apontar para dentro.
-
-As regras de negócio não devem depender de:
-
-* Express;
-* PostgreSQL;
-* Redis;
-* RabbitMQ;
-* WebSocket;
-* Docker;
-* APIs externas.
-
----
-
-## Domain
-
-Contém as regras e entidades centrais do sistema.
-
-Exemplo:
-
-```text
-domain/
-├── entities/
-│   ├── User.ts
-│   ├── Auction.ts
-│   └── Bid.ts
-│
-├── repositories/
-│   ├── UserRepository.ts
-│   ├── AuctionRepository.ts
-│   └── BidRepository.ts
-│
-└── errors/
-```
-
----
-
-## Application
-
-Contém os casos de uso.
-
-Exemplo:
-
-```text
-application/
-└── use-cases/
-    ├── auth/
-    │   ├── Login.ts
-    │   └── Register.ts
-    │
-    ├── auction/
-    │   ├── CreateAuction.ts
-    │   └── GetAuctions.ts
-    │
-    └── bid/
-        └── PlaceBid.ts
-```
-
----
-
-## Infrastructure
-
-Implementa as integrações externas.
-
-Exemplo:
-
-```text
-infrastructure/
-├── database/
-│   └── postgres/
-│
-├── http/
-│   └── api/
-│
-├── redis/
-│
-├── rabbitmq/
-│
-└── websocket/
-```
-
----
-
-## Presentation
-
-Responsável pelas interfaces de entrada.
-
-```text
-presentation/
-├── controllers/
-│   ├── http/
-│   ├── websocket/
-│   └── events/
-│
-├── routes/
-│
-└── middlewares/
-```
-
-Controllers não devem conter regras de negócio.
-
-Eles recebem a entrada, chamam um caso de uso e retornam a resposta.
+Dessa forma, um usuário não precisa ficar consultando repetidamente a API para descobrir se houve um novo lance. O servidor pode enviar a atualização através do WebSocket.
 
 ---
 
 # Estrutura do projeto
 
-Estrutura geral planejada:
-
 ```text
 auction-platform/
 │
 ├── backend/
+│   │
 │   ├── src/
-│   │   ├── domain/
 │   │   ├── application/
+│   │   │   └── use-cases/
+│   │   │
+│   │   ├── domain/
+│   │   │
 │   │   ├── infrastructure/
-│   │   ├── presentation/
+│   │   │   ├── database/
+│   │   │   ├── repositories/
+│   │   │   ├── redis/
+│   │   │   └── websocket/
+│   │   │
+│   │   ├── interfaces/
+│   │   │   ├── controllers/
+│   │   │   ├── middlewares/
+│   │   │   └── routes/
+│   │   │
 │   │   └── server.ts
 │   │
-│   ├── Dockerfile
+│   ├── tests/
+│   │   ├── auction-simulation.ts
+│   │   ├── createUser.ts
+│   │   └── placeBid.ts
+│   │
 │   ├── package.json
 │   └── tsconfig.json
 │
 ├── frontend/
+│   │
 │   ├── src/
 │   │   ├── App/
 │   │   │   ├── assets/
-│   │   │   ├── pages/
-│   │   │   ├── routes/
-│   │   │   └── interfaces/
+│   │   │   └── pages/
 │   │   │
-│   │   ├── domain/
-│   │   ├── application/
-│   │   ├── infrastructure/
-│   │   └── presentation/
+│   │   ├── routes/
+│   │   └── interfaces/
 │   │
-│   ├── Dockerfile
 │   ├── package.json
 │   └── vite.config.ts
 │
-├── nginx/
-│   └── nginx.conf
+├── autoscaler/
+│   ├── src/
+│   ├── package.json
+│   └── Dockerfile
+│
+├── services/
+│   │
+│   └── post-auction-service/
+│       ├── src/
+│       ├── proto/
+│       ├── package.json
+│       ├── Dockerfile
+│       └── tsconfig.json
 │
 ├── docker-compose.yml
-│
-├── docs/
-│   └── adr/
-│       ├── 0001-clean-architecture.md
-│       ├── 0002-websocket.md
-│       ├── 0003-redis-pubsub.md
-│       ├── 0004-rabbitmq.md
-│       ├── 0005-postgresql.md
-│       ├── 0006-docker.md
-│       ├── 0007-nginx.md
-│       └── 0008-horizontal-scaling.md
 │
 └── README.md
 ```
 
+A estrutura acima representa as principais responsabilidades. Alguns diretórios possuem subpastas adicionais conforme a implementação de cada parte do sistema.
+
 ---
 
-# Execução com Docker
+# Como executar
 
-Com o Docker instalado:
+## Pré-requisitos
+
+É necessário possuir:
+
+* Docker
+* Docker Compose
+* Node.js
+* npm
+
+## Clonar o projeto
 
 ```bash
-docker compose up --build
+git clone https://github.com/RedSmelter/PlataformaDeLeiloes.git
+cd PlataformaDeLeiloes
 ```
 
-Para executar em segundo plano:
+## Subir a aplicação
+
+Na raiz do projeto:
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
-Ver os containers:
+Verificar os containers:
 
 ```bash
 docker compose ps
 ```
 
-Ver logs:
+Para acompanhar os logs de todos os serviços:
 
 ```bash
 docker compose logs -f
 ```
 
-Parar:
+---
+
+# Logs dos serviços
+
+## Backend
+
+Na raiz do projeto:
+
+```bash
+docker compose logs -f backend
+```
+
+Esse comando permite acompanhar as requisições recebidas pelas réplicas do backend, erros e outros eventos da API.
+
+## Frontend
+
+```bash
+docker compose logs -f frontend
+```
+
+## PostgreSQL
+
+```bash
+docker compose logs -f postgres
+```
+
+## Redis
+
+```bash
+docker compose logs -f redis
+```
+
+## Traefik
+
+```bash
+docker compose logs -f traefik
+```
+
+## Autoscaler
+
+```bash
+docker compose logs -f autoscaler
+```
+
+## Post-Auction Service / gRPC
+
+O serviço de pós-leilão está localizado em:
+
+```text
+services/post-auction-service
+```
+
+Para entrar na pasta:
+
+```bash
+cd services/post-auction-service
+```
+
+Para acompanhar os logs do container do serviço:
+
+```bash
+docker compose logs -f post-auction-service
+```
+
+Se estiver utilizando o Compose a partir dessa pasta e o arquivo Compose correspondente estiver configurado ali:
+
+```bash
+docker compose logs -f
+```
+
+O serviço utiliza **gRPC na porta 50051**.
+
+---
+
+# Executar o frontend localmente
+
+Entre no frontend:
+
+```bash
+cd frontend
+```
+
+Instale as dependências:
+
+```bash
+npm install
+```
+
+Execute:
+
+```bash
+npm run dev
+```
+
+O frontend utiliza a porta:
+
+```text
+5173
+```
+
+---
+
+# Executar o backend localmente
+
+Entre no backend:
+
+```bash
+cd backend
+```
+
+Instale as dependências:
+
+```bash
+npm install
+```
+
+Execute:
+
+```bash
+npm run dev
+```
+
+O backend utiliza a porta:
+
+```text
+3000
+```
+
+---
+
+# Teste automatizado do leilão
+
+O projeto possui uma simulação automatizada para testar vários usuários participando de um mesmo leilão.
+
+O teste está localizado em:
+
+```text
+backend/tests/auction-simulation.ts
+```
+
+Entre no backend:
+
+```bash
+cd backend
+```
+
+Execute:
+
+```bash
+npm run test:auction
+```
+
+Por padrão:
+
+```text
+10 usuários
+```
+
+---
+
+# Escolhendo a quantidade de usuários
+
+A quantidade de participantes pode ser definida através de `--users`.
+
+### 20 usuários
+
+```bash
+npm run test:auction -- --users=20
+```
+
+### 50 usuários
+
+```bash
+npm run test:auction -- --users=50
+```
+
+### 200 usuários
+
+```bash
+npm run test:auction -- --users=200
+```
+
+---
+
+# O que o teste automatizado faz?
+
+O teste executa automaticamente o seguinte fluxo:
+
+```text
+1. Verifica Docker
+        ↓
+2. Verifica se existem pelo menos 2 backends
+        ↓
+3. Cria vendedor
+        ↓
+4. Cria participantes
+        ↓
+5. Cria leilão de 60 segundos
+        ↓
+6. Todos os participantes começam a disputar
+        ↓
+7. Cada usuário realiza vários lances
+        ↓
+8. Lances são aceitos ou rejeitados
+        ↓
+9. Usuários continuam disputando durante 60 segundos
+        ↓
+10. Leilão é encerrado
+        ↓
+11. Resultado da disputa é exibido
+```
+
+Durante a disputa, cada lance é exibido no console com o horário.
+
+Exemplo:
+
+```text
+[13:40:02] [LANCE] bidder-4 → R$ 125
+[13:40:02] [✓ ACEITO] bidder-4 → R$ 125
+
+[13:40:03] [LANCE] bidder-11 → R$ 143
+[13:40:03] [✓ ACEITO] bidder-11 → R$ 143
+
+[13:40:03] [LANCE] bidder-7 → R$ 121
+[13:40:03] [✗ REJEITADO] bidder-7 → R$ 121
+```
+
+Ao final:
+
+```text
+========================================
+[13:41:01] LEILÃO ENCERRADO
+========================================
+
+Total de tentativas: 700
+Lances aceitos: 35
+Lances rejeitados: 665
+Maior lance observado: R$ 1840
+```
+
+Os valores variam a cada execução.
+
+---
+
+# Múltiplas réplicas do backend
+
+O projeto executa mais de uma instância do backend.
+
+O Traefik distribui as requisições entre essas instâncias:
+
+```text
+                    Traefik
+                   /       \
+                  /         \
+                 ▼           ▼
+          Backend 1       Backend 2
+```
+
+O teste automatizado envia diversas requisições simultaneamente, permitindo observar o comportamento da aplicação em um ambiente com múltiplas réplicas.
+
+Para acompanhar:
+
+```bash
+docker compose logs -f backend
+```
+
+---
+
+# Redis Pub/Sub
+
+O Redis é utilizado como mecanismo de publicação e assinatura de eventos entre as diferentes instâncias do backend.
+
+Exemplo:
+
+```text
+Backend 1
+   │
+   │ publica evento
+   ▼
+Redis Pub/Sub
+   │
+   │ distribui evento
+   ▼
+Backend 2
+```
+
+Isso permite que um evento produzido por uma réplica possa ser propagado para outras réplicas.
+
+---
+
+# WebSocket / Socket.IO
+
+O WebSocket é utilizado para atualização dos lances em tempo real.
+
+Quando um lance é registrado, o backend emite um evento:
+
+```text
+new-bid
+```
+
+Os clientes conectados ao leilão podem receber a atualização sem realizar polling contínuo.
+
+Fluxo:
+
+```text
+Novo lance
+    │
+    ▼
+Backend
+    │
+    ▼
+Redis Pub/Sub
+    │
+    ▼
+Backend(s)
+    │
+    ▼
+Socket.IO
+    │
+    ▼
+Clientes conectados
+```
+
+---
+
+# gRPC e Post-Auction Service
+
+Quando o leilão é encerrado, o backend pode iniciar o processamento pós-leilão através do serviço separado.
+
+```text
+             Backend
+                │
+                │ gRPC
+                ▼
+      Post-Auction Service
+                │
+                ├── processamento do vencedor
+                ├── cobrança
+                ├── confirmação
+                └── tarefas pós-leilão
+```
+
+O serviço gRPC utiliza a porta:
+
+```text
+50051
+```
+
+Para visualizar seus logs:
+
+```bash
+docker compose logs -f post-auction-service
+```
+
+---
+
+# Autoscaling
+
+O projeto possui um serviço responsável pelo autoscaling dos containers do backend.
+
+Configuração atual:
+
+```text
+Mínimo de réplicas: 2
+Máximo de réplicas: 3
+```
+
+O autoscaler monitora o consumo dos containers e pode adicionar ou remover uma réplica conforme os limites configurados.
+
+Conceito:
+
+```text
+                    Autoscaler
+                        │
+                        ▼
+                  Docker Engine
+                        │
+              ┌─────────┴─────────┐
+              ▼                   ▼
+         Backend 1            Backend 2
+                                    │
+                              alta utilização
+                                    │
+                                    ▼
+                               Backend 3
+```
+
+---
+
+# Comandos úteis
+
+## Subir projeto
+
+```bash
+docker compose up -d
+```
+
+## Subir reconstruindo as imagens
+
+```bash
+docker compose up -d --build
+```
+
+## Ver containers
+
+```bash
+docker compose ps
+```
+
+## Ver todos os logs
+
+```bash
+docker compose logs -f
+```
+
+## Backend
+
+```bash
+docker compose logs -f backend
+```
+
+## Frontend
+
+```bash
+docker compose logs -f frontend
+```
+
+## Redis
+
+```bash
+docker compose logs -f redis
+```
+
+## PostgreSQL
+
+```bash
+docker compose logs -f postgres
+```
+
+## Traefik
+
+```bash
+docker compose logs -f traefik
+```
+
+## Autoscaler
+
+```bash
+docker compose logs -f autoscaler
+```
+
+## Serviço gRPC
+
+```bash
+docker compose logs -f post-auction-service
+```
+
+## Parar tudo
 
 ```bash
 docker compose down
@@ -656,316 +727,29 @@ docker compose down
 
 ---
 
-# Execução em desenvolvimento
+# Tecnologias de comunicação utilizadas
 
-## Backend
+O projeto utiliza três das tecnologias propostas no cenário:
 
-Entrar no diretório:
+| Tecnologia                | Utilização                              |
+| ------------------------- | --------------------------------------- |
+| **WebSocket / Socket.IO** | Atualização dos lances em tempo real    |
+| **Redis Pub/Sub**         | Propagação de eventos entre réplicas    |
+| **gRPC**                  | Comunicação com o serviço de pós-leilão |
 
-```bash
-cd backend
-```
+Essas tecnologias são utilizadas em conjunto com Docker, Traefik, PostgreSQL e múltiplas réplicas do backend para formar uma aplicação distribuída.
 
-Instalar dependências:
+# Objetivo do projeto
 
-```bash
-npm install
-```
+O projeto tem como objetivo demonstrar uma plataforma de leilões capaz de receber múltiplos lances simultaneamente e atualizar os participantes em tempo real.
 
-Executar:
+A arquitetura também demonstra:
 
-```bash
-npm run dev
-```
-
-O backend ficará disponível na porta configurada, por padrão:
-
-```text
-http://localhost:3000
-```
-
----
-
-## Frontend
-
-Entrar no diretório:
-
-```bash
-cd frontend
-```
-
-Instalar dependências:
-
-```bash
-npm install
-```
-
-Executar:
-
-```bash
-npm run dev
-```
-
-O Vite disponibilizará a aplicação em uma porta local, normalmente:
-
-```text
-http://localhost:5173
-```
-
----
-
-# Variáveis de ambiente
-
-Exemplo de configuração:
-
-```env
-PORT=3000
-
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/auction
-
-REDIS_HOST=redis
-REDIS_PORT=6379
-
-RABBITMQ_HOST=rabbitmq
-RABBITMQ_PORT=5672
-RABBITMQ_USER=guest
-RABBITMQ_PASSWORD=guest
-
-MIN_REPLICAS=2
-MAX_REPLICAS=3
-
-SCALE_UP_THRESHOLD=90
-SCALE_DOWN_THRESHOLD=30
-```
-
-Valores sensíveis, como senhas e credenciais de serviços externos, não devem ser versionados.
-
----
-
-# Escalabilidade
-
-O backend foi projetado para permitir múltiplas instâncias.
-
-Inicialmente:
-
-```text
-Backend #1
-Backend #2
-```
-
-Caso a utilização ultrapasse determinado limite, uma terceira instância pode ser criada:
-
-```text
-Backend #1
-Backend #2
-Backend #3
-```
-
-A quantidade de réplicas pode ser controlada através de variáveis de ambiente:
-
-```env
-MIN_REPLICAS=2
-MAX_REPLICAS=3
-SCALE_UP_THRESHOLD=90
-SCALE_DOWN_THRESHOLD=30
-```
-
-O monitoramento avalia a utilização das instâncias e pode solicitar a criação ou remoção de réplicas.
-
-É importante observar que a "capacidade" da instância não é uma capacidade fixa própria do container. Ela é determinada principalmente pelos recursos disponíveis no host e pelos limites de CPU/memória configurados para o container.
-
----
-
-# Por que Redis é necessário com múltiplos backends?
-
-Considere:
-
-```text
-Usuário A
-   │
-   ▼
-Backend #1
-```
-
-e:
-
-```text
-Usuário B
-   │
-   ▼
-Backend #2
-```
-
-Se A realizar um lance no Backend #1, apenas o Backend #1 teria conhecimento imediato desse evento.
-
-Com Redis Pub/Sub:
-
-```text
-Backend #1
-    │
-    ▼
- Redis
-    │
-    └─────────────┐
-                  │
-                  ▼
-             Backend #2
-```
-
-O evento pode chegar a todas as instâncias.
-
-Assim, cada backend consegue enviar a atualização aos WebSockets conectados a ele.
-
----
-
-# Testes de carga
-
-O projeto também pode possuir um script para simular vários usuários.
-
-Exemplo conceitual:
-
-```text
-200 usuários
-     │
-     ├──► Leilão A
-     ├──► Leilão B
-     ├──► Leilão C
-     └──► Leilão D
-```
-
-O objetivo é observar:
-
-* quantidade de conexões simultâneas;
-* quantidade de lances;
-* latência;
-* utilização de CPU;
-* utilização de memória;
-* comportamento do Redis;
-* comportamento do RabbitMQ;
-* distribuição entre réplicas;
-* comportamento do Nginx;
-* escalabilidade do backend.
-
----
-
-# Requisitos acadêmicos atendidos
-
-O cenário exige a utilização de pelo menos duas tecnologias entre:
-
-* gRPC;
-* SSE;
-* WebSocket;
-* Redis Pub/Sub;
-* AMQP.
-
-O projeto utiliza três:
-
-| Tecnologia    | Utilização                            |
-| ------------- | ------------------------------------- |
-| WebSocket     | Atualizações de leilões em tempo real |
-| Redis Pub/Sub | Sincronização entre instâncias        |
-| AMQP/RabbitMQ | Processamento assíncrono              |
-
-Essa separação permite utilizar cada tecnologia em um problema diferente.
-
----
-
-# Segurança
-
-Alguns pontos considerados:
-
-* autenticação dos usuários;
-* validação dos dados recebidos;
-* proteção das credenciais por variáveis de ambiente;
-* isolamento dos containers;
-* validação de lances no backend;
-* regras de negócio independentes da interface;
-* não confiar no valor enviado pelo frontend;
-* controle de acesso às operações administrativas.
-
-O frontend é considerado um cliente não confiável. Toda regra importante deve ser validada no backend.
-
----
-
-# Princípios do projeto
-
-O projeto busca seguir:
-
-* Clean Architecture;
-* Separation of Concerns;
-* SOLID;
-* Dependency Inversion;
-* Stateless HTTP;
-* comunicação orientada a eventos;
-* processamento assíncrono;
-* escalabilidade horizontal;
-* baixo acoplamento;
-* responsabilidade única.
-
----
-
-# Decisões arquiteturais
-
-As principais decisões do projeto estão documentadas em:
-
-```text
-docs/adr/
-```
-
-Os ADRs registram:
-
-* problema;
-* contexto;
-* alternativas;
-* decisão;
-* consequências.
-
-Isso permite compreender não apenas **como** o sistema foi construído, mas também **por que** determinadas tecnologias e padrões foram escolhidos.
-
----
-
-# Próximos passos
-
-Possíveis evoluções:
-
-* implementação completa da autenticação;
-* persistência dos usuários;
-* persistência dos leilões;
-* implementação dos lances;
-* WebSocket;
-* Redis Pub/Sub;
-* RabbitMQ;
-* processamento de pagamento;
-* envio de e-mail;
-* geração de invoice;
-* Nginx;
-* múltiplas réplicas;
-* monitoramento;
-* testes automatizados;
-* testes de carga;
-* observabilidade;
-* métricas de CPU/memória;
-* deployment em servidor remoto/cloud.
-
----
-
-# Autores
-
-Projeto desenvolvido para fins acadêmicos no curso de **Engenharia da Computação**.
-
-**Projeto:** Plataforma de Leilões em Tempo Real
-
-**Stack principal:**
-
-```text
-TypeScript
-React
-Node.js
-Express
-PostgreSQL
-Redis
-RabbitMQ
-WebSocket
-Nginx
-Docker
-```
+* execução de múltiplas réplicas;
+* balanceamento de requisições;
+* comunicação assíncrona através do Redis Pub/Sub;
+* comunicação em tempo real através de WebSocket;
+* comunicação entre serviços através de gRPC;
+* processamento pós-leilão desacoplado;
+* execução de testes automatizados com múltiplos usuários;
+* escalabilidade horizontal através de containers.
