@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package postauction;
+
+service PostAuctionService {
+  rpc NotifyAuctionClosed (AuctionClosedRequest) returns (AuctionClosedResponse);
+}
+
+message AuctionClosedRequest {
+  string auctionId = 1;
+  string auctionTitle = 2;
+  string winnerId = 3;
+  string winnerUsername = 4;
+  double finalPrice = 5;
+}
+
+message AuctionClosedResponse {
+  bool accepted = 1;
+}
