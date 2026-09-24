@@ -308,18 +308,6 @@ docker compose logs -f autoscaler
 
 ## Post-Auction Service / gRPC
 
-O serviço de pós-leilão está localizado em:
-
-```text
-services/post-auction-service
-```
-
-Para entrar na pasta:
-
-```bash
-cd services/post-auction-service
-```
-
 Para acompanhar os logs do container do serviço:
 
 ```bash
