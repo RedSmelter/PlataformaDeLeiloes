@@ -16,6 +16,6 @@ export interface AuctionRepository {
   findExpiredOpen(): Promise<Auction[]>
   create(input: CreateAuctionInput): Promise<Auction>
   updateCurrentPrice(id: string, newPrice: number): Promise<void>
-  close(id: string, winnerId: string | null): Promise<void>
+  close(id: string, winnerId: string | null): Promise<boolean>
   delete(id: string): Promise<void>
 }

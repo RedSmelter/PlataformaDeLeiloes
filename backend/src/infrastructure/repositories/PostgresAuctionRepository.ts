@@ -71,11 +71,12 @@ export class PostgresAuctionRepository implements AuctionRepository {
   return result.rows.map(mapRow)
 }
 
-async close(id: string, winnerId: string | null): Promise<void> {
-  await pool.query(
-    `UPDATE auctions SET status = 'closed', winner_id = $1 WHERE id = $2`,
+async close(id: string, winnerId: string | null): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE auctions SET status = 'closed', winner_id = $1 WHERE id = $2 AND status = 'open'`,
     [winnerId, id]
   )
+  return (result.rowCount ?? 0) > 0
 }
   
 }

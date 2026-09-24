@@ -13,12 +13,14 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.14.5",
     "@grpc/proto-loader": "^0.8.1",
+    "@socket.io/redis-adapter": "^8.3.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.3",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.23.0",
+    "redis": "^6.2.1",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
@@ -28,6 +30,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.2",
     "@types/pg": "^8.23.1",
+    "socket.io-client": "^4.8.3",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }

@@ -23,9 +23,13 @@ export class CloseExpiredAuctions {
 
     for (const auction of expiredAuctions) {
       const bids = await this.bidRepository.findByAuctionId(auction.id)
-      const winnerBid = bids[0] ?? null // já vem ordenado por created_at DESC
+      const winnerBid = bids[0] ?? null
 
-      await this.auctionRepository.close(auction.id, winnerBid?.userId ?? null)
+      const closedHere = await this.auctionRepository.close(auction.id, winnerBid?.userId ?? null)
+
+      // Outra instância já fechou este leilão entre o findExpiredOpen() e agora —
+      // não duplica o evento de WebSocket nem a chamada gRPC.
+      if (!closedHere) continue
 
       results.push({
         auction: { ...auction, status: 'closed', winnerId: winnerBid?.userId ?? null },

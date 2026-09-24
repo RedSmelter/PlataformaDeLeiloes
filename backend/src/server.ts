@@ -7,29 +7,34 @@ import { createServer } from "http";
 import { createSocketServer } from "./infrastructure/websocket/socketServer.js";
 import { registerAuctionSocketHandlers } from "./interfaces/sockets/auctionSocketHandler.js";
 import { startAuctionCloserJob } from "./interfaces/jobs/auctionCloserJob.js";
+import os from "os";
 
-const app = express();
+async function bootstrap() {
+  const app = express();
 
-app.use(cors());
-app.use(express.json());
+  app.use(cors());
+  app.use(express.json());
 
-app.use("/api/auth", authRoutes);
-app.use("/api/auctions", auctionRoutes);
+  app.use("/api/auth", authRoutes);
+  app.use("/api/auctions", auctionRoutes);
 
-app.get("/", (req, res) => {
-    res.json({
-        title: 'Plataforma de Leilões',
-        message: 'Servidor funfannnnte!'
-    });
-});
+  app.get("/", (req, res) => {
+      res.json({
+          title: 'Plataforma de Leilões',
+          message: 'Servidor funfannnnte!'
+      });
+  });
 
-const httpServer = createServer(app);
-const io = createSocketServer(httpServer);
-registerAuctionSocketHandlers(io);
-startAuctionCloserJob(io);
+  const httpServer = createServer(app);
+  const io = await createSocketServer(httpServer);
+  registerAuctionSocketHandlers(io);
+  startAuctionCloserJob(io);
 
-const PORT = process.env.PORT ?? 3000;
+  const PORT = process.env.PORT ?? 3000;
 
-httpServer.listen(PORT, () => {
-    console.log(`Servidor rodando em http://localhost:${PORT}`);
-});
+  httpServer.listen(PORT, () => {
+      console.log(`Servidor rodando em http://localhost:${PORT} (instância ${os.hostname()})`);
+  });
+}
+
+bootstrap();
