@@ -22,6 +22,9 @@ import { PlaceBid } from '../../application/use-cases/bid/PlaceBid'
 import { HttpAuctionRepository } from '../../infrastructure/repositories/HttpAuctionRepository'
 import { HttpBidRepository } from '../../infrastructure/repositories/HttpBidRepository'
 import { ApiError } from '../../infrastructure/http/api'
+import { mapToBid } from '../../infrastructure/http/bidMapper'
+import type { BidApiResponse } from '../../infrastructure/http/bidMapper'
+import { getSocket } from '../../infrastructure/webSocket/socket.js'
 import type { Auction } from '../../domain/entities/Auction'
 import type { Bid } from '../../domain/entities/Bid'
 
@@ -81,11 +84,54 @@ function AuctionDetails() {
     loadData()
   }, [id])
 
+  // Conexão em tempo real: entra na sala do leilão e escuta novos lances.
+  useEffect(() => {
+    if (!id) return
+
+    const socket = getSocket()
+    socket.emit('join-auction', id)
+
+    function handleNewBid(payload: BidApiResponse) {
+      const bid = mapToBid(payload)
+
+      setBids((prev) => {
+        if (prev.some((b) => b.id === bid.id)) return prev
+        return [bid, ...prev]
+      })
+
+      setAuction((prev) => (prev ? { ...prev, currentBid: bid.amount } : prev))
+    }
+
+    socket.on('new-bid', handleNewBid)
+
+    return () => {
+      socket.emit('leave-auction', id)
+      socket.off('new-bid', handleNewBid)
+    }
+  }, [id])
+
   const [, forceRerender] = useState(0)
   useEffect(() => {
     const interval = setInterval(() => forceRerender((n) => n + 1), 15000)
     return () => clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+  if (!id) return
+
+  const socket = getSocket()
+
+  function handleAuctionClosed(payload: { auctionId: string; finalPrice: number }) {
+    if (payload.auctionId !== id) return
+    setAuction((prev) => (prev ? { ...prev, status: 'closed', currentBid: payload.finalPrice } : prev))
+  }
+
+  socket.on('auction-closed', handleAuctionClosed)
+
+  return () => {
+    socket.off('auction-closed', handleAuctionClosed)
+  }
+}, [id])
 
   if (isLoading) {
     return (
@@ -130,24 +176,29 @@ function AuctionDetails() {
   }
 
   async function handlePlaceBid() {
-    const amount = Number(bidAmount)
-    if (!amount || !auction) return
+  const amount = Number(bidAmount)
+  if (!amount || !auction) return
 
-    setBidError(null)
-    setIsBidding(true)
+  setBidError(null)
+  setIsBidding(true)
 
-    try {
-      const newBid = await placeBid.execute({ auctionId: auction.id, amount })
-      setBids((prev) => [newBid, ...prev])
-      setAuction((prev) => (prev ? { ...prev, currentBid: newBid.amount } : prev))
-      setIsDialogOpen(false)
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Erro ao registrar lance'
-      setBidError(message)
-    } finally {
-      setIsBidding(false)
-    }
+  try {
+    const newBid = await placeBid.execute({ auctionId: auction.id, amount })
+
+    setBids((prev) => {
+      if (prev.some((b) => b.id === newBid.id)) return prev
+      return [newBid, ...prev]
+    })
+    setAuction((prev) => (prev ? { ...prev, currentBid: newBid.amount } : prev))
+
+    setIsDialogOpen(false)
+  } catch (err) {
+    const message = err instanceof ApiError ? err.message : 'Erro ao registrar lance'
+    setBidError(message)
+  } finally {
+    setIsBidding(false)
   }
+}
 
   return (
     <div className="min-h-screen bg-gray-100">

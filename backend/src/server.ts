@@ -3,6 +3,10 @@ import cors from "cors";
 import "dotenv/config";
 import authRoutes from "./interfaces/routes/AuthRoutes.js";
 import auctionRoutes from "./interfaces/routes/AuctionRoutes.js";
+import { createServer } from "http";
+import { createSocketServer } from "./infrastructure/websocket/socketServer.js";
+import { registerAuctionSocketHandlers } from "./interfaces/sockets/auctionSocketHandler.js";
+import { startAuctionCloserJob } from "./interfaces/jobs/auctionCloserJob.js";
 
 const app = express();
 
@@ -19,8 +23,13 @@ app.get("/", (req, res) => {
     });
 });
 
+const httpServer = createServer(app);
+const io = createSocketServer(httpServer);
+registerAuctionSocketHandlers(io);
+startAuctionCloserJob(io);
+
 const PORT = process.env.PORT ?? 3000;
 
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
     console.log(`Servidor rodando em http://localhost:${PORT}`);
 });

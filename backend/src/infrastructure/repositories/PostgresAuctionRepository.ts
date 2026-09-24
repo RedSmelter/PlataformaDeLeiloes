@@ -63,4 +63,19 @@ export class PostgresAuctionRepository implements AuctionRepository {
   async delete(id: string): Promise<void> {
     await pool.query('DELETE FROM auctions WHERE id = $1', [id])
   }
+
+  async findExpiredOpen(): Promise<Auction[]> {
+  const result = await pool.query(
+    `SELECT * FROM auctions WHERE status = 'open' AND ends_at <= now()`
+  )
+  return result.rows.map(mapRow)
+}
+
+async close(id: string, winnerId: string | null): Promise<void> {
+  await pool.query(
+    `UPDATE auctions SET status = 'closed', winner_id = $1 WHERE id = $2`,
+    [winnerId, id]
+  )
+}
+  
 }

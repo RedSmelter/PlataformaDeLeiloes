@@ -13,7 +13,9 @@ export interface CreateAuctionInput {
 export interface AuctionRepository {
   findAll(): Promise<Auction[]>
   findById(id: string): Promise<Auction | null>
+  findExpiredOpen(): Promise<Auction[]>
   create(input: CreateAuctionInput): Promise<Auction>
   updateCurrentPrice(id: string, newPrice: number): Promise<void>
+  close(id: string, winnerId: string | null): Promise<void>
   delete(id: string): Promise<void>
 }

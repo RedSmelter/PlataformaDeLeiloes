@@ -3,6 +3,7 @@ import type { AuthenticatedRequest } from '../middlewares/authMiddleware.js'
 import { GetBids } from '../../application/use-cases/bid/GetBids.js'
 import { PlaceBid } from '../../application/use-cases/bid/PlaceBid.js'
 import { PostgresBidRepository } from '../../infrastructure/repositories/PostgresBidRepository.js'
+import { getIO } from '../../infrastructure/websocket/socketServer.js'
 
 const bidRepository = new PostgresBidRepository()
 const getBids = new GetBids(bidRepository)
@@ -37,6 +38,8 @@ export class BidController {
         userId: req.userId!,
         amount: Number(amount),
       })
+
+      getIO().to(`auction:${id}`).emit('new-bid', bid)
 
       return res.status(201).json(bid)
     } catch (error) {
