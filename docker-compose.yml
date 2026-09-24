@@ -57,6 +57,11 @@ services:
       JWT_SECRET: troque_essa_chave_antes_de_ir_pra_producao
       POST_AUCTION_SERVICE_URL: post-auction-service:50051
       PORT: 3000
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
     depends_on:
       - postgres
       - redis
@@ -91,8 +96,8 @@ services:
       COMPOSE_PROJECT_NAME: auction-platform
       MIN_REPLICAS: "2"
       MAX_REPLICAS: "3"
-      SCALE_UP_THRESHOLD: "50"
-      SCALE_DOWN_THRESHOLD: "30"
+      SCALE_UP_THRESHOLD: "85"
+      SCALE_DOWN_THRESHOLD: "25"
       CHECK_INTERVAL_SECONDS: "3"
     depends_on:
       - backend
